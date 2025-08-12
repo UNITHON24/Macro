@@ -4,6 +4,7 @@ import json
 import base64
 import threading
 import queue
+import time
 import websockets
 from typing import Optional, Callable
 from .config import Config
@@ -21,7 +22,8 @@ class AudioWSClient:
         self._sender_task = None
         self._receiver_task = None
         self.connected = False
-        self.tts_player = TTSPlayer()
+        self.tts_player = TTSPlayer(prefer_pygame_fallback=cfg.tts_prefer_pygame_fallback)
+        self._fallback_timer = None
 
     async def _connect(self):
         try:
@@ -82,29 +84,48 @@ class AudioWSClient:
                 if isinstance(msg, bytes):
                     continue
                 try:
+                    print(f"[WS] 원본 메시지: {msg[:200]}...")  # 처음 200자만 출력
                     data = json.loads(msg)
-                except Exception:
+                except Exception as e:
+                    print(f"[WS] JSON 파싱 실패: {e}")
                     continue
                     
                 t = data.get("type")
+                print(f"[WS] 메시지 타입: {t}")  # 모든 메시지 타입 출력
+                
                 if t == "stop" and self.on_server_stop:
                     print("[WS] 서버에서 중지 신호 수신")
                     self.on_server_stop()
                 elif t == "error":
                     print(f"[WS] 서버 오류: {data.get('message', 'Unknown error')}")
                 elif t == "tts.chunk":
-                    # TTS 오디오 청크 수신
+                    # TTS 오디오 청크 수신 (HTML과 동일한 방식)
                     audio_data = data.get("audioData")
                     if audio_data:
-                        print(f"[TTS] 오디오 청크 수신: {len(audio_data)} bytes")
+                        print(f"[TTS] 오디오 청크 수신: {len(audio_data)} bytes (Base64)")
                         self.tts_player.add_chunk(audio_data)
-                elif t == "tts.complete":
-                    print("[TTS] TTS 완료 - 오디오 재생 시작")
-                    # 별도 스레드에서 재생 (블로킹 방지)
+                        # 폴백: 마지막 청크 시간 기록 (tts.complete가 안 올 경우 대비)
+                        self.tts_player.last_chunk_time = time.time()
+                        # 폴백 타이머: 설정값 후에도 tts.complete가 안 오면 재생
+                        if hasattr(self, '_fallback_timer') and self._fallback_timer:
+                            self._fallback_timer.cancel()
+                        self._fallback_timer = threading.Timer(self.cfg.tts_fallback_sec, self._fallback_play)
+                        self._fallback_timer.start()
+                    else:
+                        print("[TTS] audioData 필드가 없음!")
+                        print(f"[TTS] 데이터 키들: {list(data.keys())}")
+                elif t in ("tts.complete", "tts.end", "tts.done"):
+                    print(f"[TTS] TTS 완료 신호 수신({t}) - 오디오 재생 시작 (총 {len(self.tts_player.chunks)}개 청크)")
+                    # 폴백 타이머 취소
+                    if hasattr(self, '_fallback_timer') and self._fallback_timer:
+                        self._fallback_timer.cancel()
+                    # HTML처럼 완료 신호에서 재생
                     threading.Thread(target=self.tts_player.play_complete, daemon=True).start()
                 elif t == "bot.reply":
                     message = data.get("message", "")
                     print(f"[BOT] 봇 응답: {message}")
+                    # TTS 청크가 설정 시간 내에 오지 않으면 강제 TTS 요청 (로그만)
+                    self._wait_for_tts_or_request()
                 elif t == "transcript.partial":
                     transcript = data.get("transcript", "")
                     print(f"[STT] 부분 인식: {transcript}")
@@ -113,6 +134,7 @@ class AudioWSClient:
                     print(f"[STT] 최종 인식: {transcript}")
                 else:
                     print(f"[WS] 알 수 없는 메시지 타입: {t}")
+                    print(f"[WS] 전체 데이터: {data}")
                     
         except websockets.exceptions.ConnectionClosed:
             print("[WS] 서버와의 연결이 끊어짐")
@@ -120,6 +142,24 @@ class AudioWSClient:
                 self.on_server_stop()
         except Exception as e:
             print(f"[WS] 메시지 수신 오류: {e}")
+
+    def _wait_for_tts_or_request(self):
+        """TTS 청크를 기다리거나 설정 시간 후 강제 경고"""
+        def check_tts():
+            time.sleep(self.cfg.tts_fallback_sec)
+            if not self.tts_player.chunks:
+                print("[TTS] 시간 내 TTS 청크 없음 - 백엔드 TTS 서비스 확인 필요")
+        
+        threading.Thread(target=check_tts, daemon=True).start()
+
+    def _fallback_play(self):
+        """설정 시간 후에도 tts.complete가 오지 않으면 폴백으로 재생"""
+        print(f"[TTS] 폴백 타이머 실행됨! 청크 수: {len(self.tts_player.chunks) if self.tts_player.chunks else 0}")
+        if self.tts_player.chunks:
+            print(f"[TTS] 폴백 재생 시작 (청크 수: {len(self.tts_player.chunks)}) - 완료 신호 미수신")
+            threading.Thread(target=self.tts_player.play_complete, daemon=True).start()
+        else:
+            print("[TTS] 폴백 타이머 실행되었지만 청크가 없음")
 
     async def _start(self):
         self.running = True
@@ -181,3 +221,38 @@ class AudioWSClient:
         except Exception:
             pass
         print("[WS] WebSocket 중지")
+
+    # ===== Public controls for utterance-level control =====
+    def send_audio_end(self):
+        if not (self.ws and self.loop and self.connected):
+            return
+        try:
+            fut = asyncio.run_coroutine_threadsafe(
+                self.ws.send(json.dumps({"type": "audio.end"})),
+                self.loop
+            )
+            fut.result(timeout=1)
+            print("[WS] audio.end 전송 (utterance)")
+        except Exception as e:
+            print(f"[WS] audio.end 전송 실패: {e}")
+
+    def send_audio_start(self):
+        if not (self.ws and self.loop and self.connected):
+            return
+        try:
+            message = json.dumps({
+                "type": "audio.start",
+                "config": {
+                    "sampleRate": self.cfg.sample_rate,
+                    "encoding": "pcm_s16le",
+                    "channels": 1
+                }
+            })
+            fut = asyncio.run_coroutine_threadsafe(
+                self.ws.send(message),
+                self.loop
+            )
+            fut.result(timeout=1)
+            print("[WS] audio.start 전송 (utterance)")
+        except Exception as e:
+            print(f"[WS] audio.start 전송 실패: {e}")

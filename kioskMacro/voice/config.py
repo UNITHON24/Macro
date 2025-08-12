@@ -8,7 +8,7 @@ class Config:
     menu_cards_path: str = os.environ.get("KIOSK_MENU_CARDS", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "settingPack", "menu_cards.json"))
 
     # Audio WebSocket endpoint
-    audio_ws_url: str = os.environ.get("KIOSK_AUDIO_WS_URL", "ws://localhost:8080/api/chat")
+    audio_ws_url: str = os.environ.get("KIOSK_AUDIO_WS_URL", "ws://localhost:8080/chat")
 
     # Orders API (HTTP polling)
     orders_url: str = os.environ.get("KIOSK_ORDERS_URL", "http://localhost:9999/api/orders")
@@ -30,3 +30,7 @@ class Config:
     # WebSocket connection settings
     ws_connect_timeout: float = float(os.environ.get("KIOSK_WS_TIMEOUT", "5.0"))
     ws_max_size: int = int(os.environ.get("KIOSK_WS_MAX_SIZE", "1048576"))  # 1MB
+
+    # TTS handling
+    tts_fallback_sec: float = float(os.environ.get("KIOSK_TTS_FALLBACK_SEC", "0.8"))  # 마지막 청크 후 이 시간동안 추가 청크가 없으면 재생
+    tts_prefer_pygame_fallback: bool = os.environ.get("KIOSK_TTS_PYGAME_ONLY", "0") == "1"  # 1이면 pydub 경로 건너뜀

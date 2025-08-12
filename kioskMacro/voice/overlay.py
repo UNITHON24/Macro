@@ -16,11 +16,11 @@ def _ensure_tcl_tk_path():
             os.environ.setdefault("TK_LIBRARY",  str(tcl_dir))
             return
     guesses = [
-        fr"C:\Users\{os.getlogin()}\AppData\Local\Programs\Python\Python313\tcl",
-        fr"C:\Users\{os.getlogin()}\AppData\Local\Programs\Python\Python312\tcl",
+        fr"C:\\Users\\{os.getlogin()}\\AppData\\Local\\Programs\\Python\\Python313\\tcl",
+        fr"C:\\Users\\{os.getlogin()}\\AppData\\Local\\Programs\\Python\\Python312\\tcl",
 
-        r"C:\Python313\tcl",
-        r"C:\Python312\tcl",
+        r"C:\\Python313\\tcl",
+        r"C:\\Python312\\tcl",
     ]
     for g in guesses:
         for ver in tcl_versions:
@@ -109,8 +109,15 @@ class MicOverlay:
         self.mic_pulse_interval = 5.0  # 5초 간격
         self.mic_pulse_auto = False  # 자동 펄스 모드 (백엔드 신호 없이 자동 동작)
         
-        # 자동 펄스 모드 활성화 (마이크 활성화 시 자동 시작)
-        self.auto_pulse_on_recording = True
+        # 자동 펄스 모드 비활성화 (마이크 활성화 시 자동 시작하지 않음)
+        self.auto_pulse_on_recording = False
+
+        # 짧은 무음 기반 발화 단위 펄스 설정
+        self.utterance_pulse_enabled = True
+        self.utterance_silence_sec = 0.8   # 이 시간 이상 무음이면 한 번 끊어 최종 인식 유도
+        self.utterance_resume_delay_ms = 300  # 끊은 뒤 재개까지 대기 시간
+        self.utterance_cooldown_sec = 1.5  # 펄스 간 최소 간격
+        self._last_utterance_pulse_ts = 0.0
         
         # orders_client에 오버레이 참조 설정
         self.orders.set_overlay(self)
@@ -514,7 +521,24 @@ class MicOverlay:
             # 음성 감지 시간 업데이트
             if self.audio.last_speech_time > self.last_speech_time:
                 self.last_speech_time = self.audio.last_speech_time
-                
+            
+            # 발화 단위 펄스: 짧은 무음 구간에서만 1회 끊고 재개하여 STT 최종 인식 유도
+            if (self.utterance_pulse_enabled and not self.mic_pulse_enabled and not self.mic_pulse_auto):
+                now = time.monotonic()
+                silence_for = now - self.audio.last_speech_time
+                since_last_pulse = now - self._last_utterance_pulse_ts
+                if (silence_for >= self.utterance_silence_sec and
+                    since_last_pulse >= self.utterance_cooldown_sec):
+                    print(f"[UTT] 짧은 무음 감지({silence_for:.2f}s) → 발화 단위 펄스 수행")
+                    # 끊기: WebSocket은 유지하고 STT 최종화를 위해 audio.end만 전송
+                    try:
+                        self.ws.send_audio_end()
+                    except Exception:
+                        pass
+                    self._last_utterance_pulse_ts = now
+                    # 짧게 대기 후 재개: audio.start만 전송
+                    self.root.after(self.utterance_resume_delay_ms, self._resume_after_utterance_pulse)
+            
             # 마이크 펄스 모드가 활성화되어 있으면 1분 무음 체크 건너뛰기
             if not self.mic_pulse_enabled:
                 # 녹음 중 애니메이션 프레임 증가 및 리드로우
@@ -522,6 +546,15 @@ class MicOverlay:
                 self._draw()
                 
         self.root.after(500, self._tick)
+
+    def _resume_after_utterance_pulse(self):
+        if self.state != "rec":
+            return
+        print("[UTT] 발화 단위 펄스 재개: audio.start 전송")
+        try:
+            self.ws.send_audio_start()
+        except Exception as e:
+            print(f"[UTT] 재개 오류: {e}")
 
     def run(self):
         try:
