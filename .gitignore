@@ -158,4 +158,9 @@ Temporary Items
 
 # Project specific
 output/
-debug_*/ 
+debug_*/ venv/
+__pycache__/
+*.pyc
+*.zip
+settingPack/captures/
+settingPack/debug_kiosk/
