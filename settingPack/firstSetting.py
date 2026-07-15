@@ -15,7 +15,7 @@ import subprocess
 import pyautogui
 
 # pyautogui 안전장치 비활성화
-pyautogui.FAILSAFE = False
+pyautogui.FAILSAFE = True
 
 def run_command(cmd):
     """명령어 실행"""

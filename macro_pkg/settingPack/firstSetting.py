@@ -14,8 +14,8 @@ import time
 import subprocess
 import pyautogui
 
-# pyautogui 안전장치 비활성화
-pyautogui.FAILSAFE = False
+# Moving the pointer to a screen corner remains an emergency stop during calibration.
+pyautogui.FAILSAFE = True
 
 # 기본 키오스크 URL (환경변수 KIOSK_URL로 오버라이드 가능)
 KIOSK_URL = os.environ.get("KIOSK_URL", "https://frontend-phi-tan.vercel.app/")
@@ -23,11 +23,18 @@ KIOSK_URL = os.environ.get("KIOSK_URL", "https://frontend-phi-tan.vercel.app/")
 def run_command(cmd):
     """명령어 실행"""
     print(f"\n{'='*50}")
-    print(f"실행: {cmd}")
+    print(f"실행: {subprocess.list2cmdline(cmd)}")
     print(f"{'='*50}")
 
     try:
-        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, encoding='utf-8', errors='ignore')
+        result = subprocess.run(
+            cmd,
+            shell=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+        )
         if result.stdout:
             print("출력:", result.stdout)
         if result.stderr:
@@ -37,7 +44,7 @@ def run_command(cmd):
         print(f"실행 오류: {e}")
         return False
 
-def main():
+def main() -> int:
     print("🎯 키오스크 메뉴 분석 파이프라인 시작")
     print(f"작업 디렉토리: {os.getcwd()}")
 
@@ -50,13 +57,14 @@ def main():
         print(f"🖱️ 마우스를 안전한 위치로 이동: ({safe_x}, {safe_y})")
     except Exception as e:
         print(f"마우스 이동 오류: {e}")
+        return 1
 
     # 필요한 파일 확인
     required_files = ["openKiosk.py", "ocrFirst.py", "kioskMenuCapture.py", "kioskAnalyzeEasyOCR.py"]
     for file in required_files:
         if not os.path.exists(file):
             print(f"❌ 파일 없음: {file}")
-            return
+            return 1
 
     print("✅ 모든 파일 확인됨")
 
@@ -64,7 +72,12 @@ def main():
     print("\n📋 1단계: 키오스크 열기")
     print("키오스크 브라우저를 여는 중...")
 
-    success = run_command(f'py openKiosk.py --url "{KIOSK_URL}" --kiosk --zoom 0.65')
+    success = run_command(
+        [sys.executable, "openKiosk.py", "--url", KIOSK_URL, "--kiosk", "--zoom", "0.65"]
+    )
+    if not success:
+        print("❌ 키오스크 실행 실패")
+        return 1
     print("⏳ 5초 대기...")
     time.sleep(5)
 
@@ -72,10 +85,10 @@ def main():
     print("\n📋 2단계: UI 좌표 분석")
     print("카테고리와 버튼의 이름, 위치 인식 중...")
 
-    success = run_command('py ocrFirst.py')
+    success = run_command([sys.executable, "ocrFirst.py"])
     if not success:
         print("❌ UI 좌표 분석 실패")
-        return
+        return 1
 
     # 카테고리 정보 읽어서 표시
     if os.path.exists("kiosk_ui_coords_easyocr.json"):
@@ -91,6 +104,7 @@ def main():
                 time.sleep(0.5)
         except Exception as e:
             print(f"카테고리 정보 읽기 실패: {e}")
+            return 1
 
     print("⏳ 3초 대기...")
     time.sleep(3)
@@ -99,16 +113,25 @@ def main():
     print("\n📋 3단계: 메뉴 캡처")
     print("화면 캡처를 시작합니다...")
 
-    success = run_command('py kioskMenuCapture.py --coords "kiosk_ui_coords_easyocr.json" --outdir "captures"')
+    success = run_command(
+        [
+            sys.executable,
+            "kioskMenuCapture.py",
+            "--coords",
+            "kiosk_ui_coords_easyocr.json",
+            "--outdir",
+            "captures",
+        ]
+    )
     if not success:
         print("❌ 메뉴 캡처 실패")
-        return
+        return 1
 
     # 캡처된 카테고리 정보 표시
-    if os.path.exists("../captures"):
-        categories = [d for d in os.listdir("../captures") if os.path.isdir(os.path.join("../captures", d))]
+    if os.path.exists("captures"):
+        categories = [d for d in os.listdir("captures") if os.path.isdir(os.path.join("captures", d))]
         for cat in categories:
-            cat_dir = os.path.join("../captures", cat)
+            cat_dir = os.path.join("captures", cat)
             pages = [f for f in os.listdir(cat_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
             print(f"'{cat}' 카테고리 {len(pages)}페이지 정보 모으는 중...")
             time.sleep(0.3)
@@ -120,10 +143,19 @@ def main():
     print("\n📋 4단계: 메뉴 분석")
     print("메뉴명과 가격, 위치 정보 모으는 중...")
 
-    success = run_command('py kioskAnalyzeEasyOCR.py --indir "captures" --out "menu_cards.json"')
+    success = run_command(
+        [
+            sys.executable,
+            "kioskAnalyzeEasyOCR.py",
+            "--indir",
+            "captures",
+            "--out",
+            "menu_cards.json",
+        ]
+    )
     if not success:
         print("❌ 메뉴 분석 실패")
-        return
+        return 1
 
     # 분석 결과 개요만 표시 (개별 항목 출력 제거)
     if os.path.exists("menu_cards.json"):
@@ -156,8 +188,12 @@ def main():
 
         except Exception as e:
             print(f"결과 파일 읽기 오류: {e}")
+            return 1
     else:
         print("❌ 결과 파일이 없습니다")
+        return 1
+
+    return 0
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

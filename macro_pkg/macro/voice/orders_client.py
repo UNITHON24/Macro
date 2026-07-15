@@ -1,26 +1,17 @@
 from __future__ import annotations
 import time
-import json
-import hashlib
 import threading
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Callable
 import requests
 from .config import Config
 from .macro import OrderMacro
-
-def _hash_payload(p: Any) -> str:
-    try:
-        s = json.dumps(p, sort_keys=True, ensure_ascii=False)
-    except Exception:
-        s = str(p)
-    return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 class OrdersClient:
     """
     Polls ORDERS_URL for JSON like:
       - [{ "name": "...", "count": 1 }, ...]
       - or { "type": "final", "items": [ ... ] }
-    Deduplicates by content hash and triggers macro.perform(items).
+    Uses the order hub's consume-once GET contract and triggers macro.perform(items).
     """
     def __init__(self, cfg: Config, macro: OrderMacro, on_server_stop: Optional[Callable[[], None]] = None):
         self.cfg = cfg
@@ -28,7 +19,6 @@ class OrdersClient:
         self.on_server_stop = on_server_stop
         self.thread: Optional[threading.Thread] = None
         self.running = False
-        self.last_hash: Optional[str] = None
         
         # 오버레이 참조 (나중에 설정)
         self.overlay = None
@@ -74,8 +64,6 @@ class OrdersClient:
                         # 주문 처리 완료 - 마이크 종료 가능
                         if self.overlay:
                             self.overlay.set_processing_order(False)
-                    # 동일한 주문이 다시 오더라도(새 POST) 처리 가능하도록 해시 메모리 초기화
-                    self.last_hash = None
                 else:
                     # optional: stop signal
                     if isinstance(payload, dict) and payload.get("type") == "stop" and self.on_server_stop:

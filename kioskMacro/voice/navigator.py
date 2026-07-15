@@ -6,7 +6,7 @@ from .index_loader import MenuIndex
 from .config import Config
 
 # 안전 설정: 실수로 모서리 이동 시 중단 방지, 전역 대기 제거로 클릭 응답성 향상
-pyautogui.FAILSAFE = False
+pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0
 
 class Navigator:

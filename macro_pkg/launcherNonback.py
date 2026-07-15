@@ -3,9 +3,9 @@
 """
 launcherNonback.py
 - 백엔드 서버 기동 없이 다음 순서만 자동화:
-  1) settingPack/firstSetting.py 실행(동기)
-  2) kioskMacro/kioskMacro/kioskMacro/ordersHub.py 실행(백그라운드) 및 9999 대기
-  3) kioskMacro/kioskMacro/kioskMacro/run_voice.py 실행(포그라운드)
+  1) 기존 메뉴 좌표·인덱스 확인(보정은 KIOSK_RUN_CALIBRATION=1일 때만 실행)
+  2) macro/ordersHub.py 실행(백그라운드) 및 9999 대기
+  3) macro/run_voice.py 실행(포그라운드)
 
 사용:
   py launcherNonback.py
@@ -18,11 +18,14 @@ import subprocess
 import socket
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-PYROOT = ROOT / "kioskMacro"
-ORDERS = PYROOT / "kioskMacro" / "ordersHub.py"
-RUN_VOICE = PYROOT / "kioskMacro" / "run_voice.py"
-FIRST = PYROOT / "settingPack" / "firstSetting.py"
+PACKAGE_ROOT = Path(__file__).resolve().parent
+MACRO_ROOT = PACKAGE_ROOT / "macro"
+ORDERS = MACRO_ROOT / "ordersHub.py"
+RUN_VOICE = MACRO_ROOT / "run_voice.py"
+FIRST = PACKAGE_ROOT / "settingPack" / "firstSetting.py"
+sys.path.insert(0, str(MACRO_ROOT))
+
+from voice.config import Config
 
 
 def wait_port(host: str, port: int, timeout_sec: int = 60) -> bool:
@@ -45,19 +48,40 @@ def run_sync(cmd: list[str], cwd: Path | None = None) -> int:
 def run_bg(cmd: list[str], cwd: Path | None = None) -> subprocess.Popen:
     print(f"[BG ] {' '.join(cmd)} | cwd={cwd or os.getcwd()}")
     return subprocess.Popen(cmd, cwd=str(cwd) if cwd else None,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0)
 
 
+def calibration_requested() -> bool:
+    return os.environ.get("KIOSK_RUN_CALIBRATION", "").strip().casefold() in {
+        "1", "true", "yes", "on"
+    }
+
+
+def prepare_client_files() -> bool:
+    if calibration_requested():
+        print("[CAL] 명시적으로 요청된 키오스크 좌표 보정을 시작합니다.")
+        code = run_sync([sys.executable, str(FIRST)], cwd=FIRST.parent)
+        if code != 0:
+            print(f"[ERR] firstSetting.py 실패 (코드 {code})")
+            return False
+    else:
+        print("[SAFE] 좌표 보정 건너뜀 (KIOSK_RUN_CALIBRATION 미설정)")
+
+    config = Config()
+    required_paths = [Path(config.ui_coords_path), Path(config.menu_cards_path)]
+    missing_paths = [path for path in required_paths if not path.is_file()]
+    if missing_paths:
+        for path in missing_paths:
+            print(f"[ERR] required client data not found: {path}")
+        print("[HINT] 테스트 키오스크에서 KIOSK_RUN_CALIBRATION=1로 다시 실행하세요.")
+        return False
+    return True
+
+
 def main() -> int:
-    # 1) firstSetting.py 실행
-    if not FIRST.exists():
-        print(f"[ERR] not found: {FIRST}")
+    # 1) 기존 좌표 확인. 실제 포인터를 쓰는 보정은 명시적 opt-in만 허용.
+    if not prepare_client_files():
         return 1
-    code = run_sync([sys.executable, str(FIRST)], cwd=FIRST.parent)
-    if code != 0:
-        print(f"[ERR] firstSetting.py 실패 (코드 {code})")
-        return code
 
     # 2) ordersHub.py 백그라운드 실행
     if not ORDERS.exists():

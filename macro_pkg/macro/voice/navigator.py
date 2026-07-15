@@ -1,12 +1,13 @@
 from __future__ import annotations
 import time
 import pyautogui
-from typing import Tuple, Optional
+from typing import Tuple
 from .index_loader import MenuIndex
 from .config import Config
+from .errors import AutomationCancelled
 
-# 안전 설정: 실수로 모서리 이동 시 중단 방지, 전역 대기 제거로 클릭 응답성 향상
-pyautogui.FAILSAFE = False
+# Moving the pointer to a screen corner must remain an emergency stop.
+pyautogui.FAILSAFE = True
 pyautogui.PAUSE = 0
 
 class Navigator:
@@ -16,10 +17,11 @@ class Navigator:
         self.current_category = None
         self.current_page = 1
 
-    def click(self, xy: Tuple[int, int]):
+    def click(self, xy: Tuple[int, int]) -> bool:
         x, y = xy
         if self.cfg.dry_run:
             print(f"[DRY] click({x},{y})")
+            return True
         else:
             try:
                 # 현재 마우스 위치 확인
@@ -55,9 +57,14 @@ class Navigator:
                 
                 # 클릭 후 잠시 대기
                 time.sleep(0.1)
+                return True
                 
+            except pyautogui.FailSafeException as error:
+                print("[STOP] 화면 모서리 failsafe가 활성화되어 자동화를 중단합니다.")
+                raise AutomationCancelled("operator activated the pointer failsafe") from error
             except Exception as e:
                 print(f"[ERR] 클릭 실패 ({x},{y}): {e}")
+                return False
 
     def go_category(self, cat: str) -> bool:
         if cat not in self.idx.category_centers:
@@ -69,12 +76,15 @@ class Navigator:
         
         try:
             print(f"[NAV] 카테고리 '{cat}' 클릭 시작...")
-            self.click(xy)
+            if not self.click(xy):
+                return False
             time.sleep(self.cfg.cat_click_delay)
             self.current_category = cat
             self.current_page = 1  # 카테고리 선택 시 1페이지로 이동
             print(f"[NAV] 카테고리 '{cat}' 선택 완료")
             return True
+        except AutomationCancelled:
+            raise
         except Exception as e:
             print(f"[ERR] 카테고리 선택 실패: {e}")
             return False
@@ -94,7 +104,8 @@ class Navigator:
         try:
             for page in range(1, target_page):
                 print(f"[NAV] 다음 페이지 클릭 → {self.idx.next_xy}")
-                self.click(self.idx.next_xy)
+                if not self.click(self.idx.next_xy):
+                    return False
                 time.sleep(self.cfg.page_click_delay)
                 self.current_page = page + 1
                 print(f"[NAV] {page + 1}페이지로 이동 완료")
@@ -102,6 +113,8 @@ class Navigator:
             print(f"[NAV] {target_page}페이지 도달 완료")
             return True
             
+        except AutomationCancelled:
+            raise
         except Exception as e:
             print(f"[ERR] 페이지 이동 실패: {e}")
             return False
@@ -123,12 +136,18 @@ class Navigator:
         original_xy = xy
         print(f"[DEBUG] 원본 좌표 보존: {original_xy}")
         
-        # 안전한 시작을 위해 마우스를 화면 중앙으로 이동
-        screen_width, screen_height = pyautogui.size()
-        safe_x, safe_y = screen_width // 2, screen_height // 2
-        print(f"[SAFE] 안전한 위치로 이동: ({safe_x}, {safe_y})")
-        pyautogui.moveTo(safe_x, safe_y, duration=0.1)
-        time.sleep(0.2)
+        # Live mode begins from a neutral pointer position. Dry-run never moves the pointer.
+        if not self.cfg.dry_run:
+            try:
+                screen_width, screen_height = pyautogui.size()
+                safe_x, safe_y = screen_width // 2, screen_height // 2
+                print(f"[SAFE] 안전한 위치로 이동: ({safe_x}, {safe_y})")
+                pyautogui.moveTo(safe_x, safe_y, duration=0.1)
+                time.sleep(0.2)
+            except pyautogui.FailSafeException as error:
+                raise AutomationCancelled(
+                    "operator activated the pointer failsafe"
+                ) from error
         
         # positionTest.py와 동일한 순서로 실행 (상태 업데이트 없음)
         
@@ -139,7 +158,8 @@ class Navigator:
             return False
         cat_xy = self.idx.category_centers[cat]
         print(f"[MACRO] 카테고리 좌표: {cat_xy}")
-        self.click(cat_xy)
+        if not self.click(cat_xy):
+            return False
         time.sleep(self.cfg.cat_click_delay)
         print(f"[MACRO] 카테고리 '{cat}' 클릭 완료")
             
@@ -148,7 +168,8 @@ class Navigator:
         if page > 1:
             for p in range(1, page):
                 print(f"[MACRO] 다음 페이지 클릭 → {self.idx.next_xy}")
-                self.click(self.idx.next_xy)
+                if not self.click(self.idx.next_xy):
+                    return False
                 time.sleep(self.cfg.page_click_delay)
                 print(f"[MACRO] {p + 1}페이지로 이동 완료")
         else:
@@ -161,10 +182,13 @@ class Navigator:
             try:
                 print(f"[CLICK] '{name}' 담기 @ 원본좌표 {original_xy} ({i+1}/{count})")
                 # 원본 좌표를 그대로 사용 (좌표 변환 없음)
-                self.click(original_xy)
+                if not self.click(original_xy):
+                    continue
                 time.sleep(self.cfg.item_click_delay)
                 success_count += 1
                 print(f"[MACRO] '{name}' {i+1}개 담기 완료")
+            except AutomationCancelled:
+                raise
             except Exception as e:
                 print(f"[ERR] 메뉴 클릭 실패: {e}")
                 
@@ -196,9 +220,12 @@ class Navigator:
         for i in range(max(1, int(count))):
             try:
                 print(f"[CLICK] '{best_name}' 담기 @ {xy} ({i+1}/{count})")
-                self.click(xy)
+                if not self.click(xy):
+                    continue
                 time.sleep(self.cfg.item_click_delay)
                 success_count += 1
+            except AutomationCancelled:
+                raise
             except Exception as e:
                 print(f"[ERR] 메뉴 클릭 실패: {e}")
                 
@@ -218,7 +245,8 @@ class Navigator:
             return False
         success_count = 0
         for i in range(max(1, int(count))):
-            self.click(xy)
+            if not self.click(xy):
+                return False
             time.sleep(self.cfg.item_click_delay)
             success_count += 1
         return success_count > 0
