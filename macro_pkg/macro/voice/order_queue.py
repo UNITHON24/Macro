@@ -5,10 +5,11 @@ import os
 import sqlite3
 import threading
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
 
 def _now() -> str:
@@ -43,8 +44,18 @@ class OrderQueue:
         connection.execute("PRAGMA busy_timeout=5000")
         return connection
 
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        """Commit or roll back the transaction, then release the file handle."""
+        connection = self._connect()
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
+
     def _initialize(self) -> None:
-        with self._init_lock, self._connect() as connection:
+        with self._init_lock, self._connection() as connection:
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS orders (
@@ -119,7 +130,7 @@ class OrderQueue:
         if not order_id or len(order_id) > 200:
             raise ValueError("invalid order id")
         payload = json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
                 "SELECT payload, status FROM orders WHERE order_id = ?", (order_id,)
@@ -140,7 +151,7 @@ class OrderQueue:
         return order_id, created, str(row["status"])
 
     def claim_next(self) -> Optional[QueuedOrder]:
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             in_flight = connection.execute(
                 "SELECT 1 FROM orders "
@@ -176,7 +187,7 @@ class OrderQueue:
         else:
             destination = "succeeded" if bool(result.get("success")) else "failed"
         encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":"))
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT status FROM orders WHERE order_id = ?", (order_id,)
@@ -196,7 +207,7 @@ class OrderQueue:
         return destination
 
     def status(self, order_id: str) -> Optional[str]:
-        with self._connect() as connection:
+        with self._connection() as connection:
             row = connection.execute(
                 "SELECT status FROM orders WHERE order_id = ?", (order_id,)
             ).fetchone()
@@ -204,7 +215,7 @@ class OrderQueue:
 
     def list_orders(self, limit: int = 50) -> List[Dict[str, Any]]:
         safe_limit = max(1, min(int(limit), 500))
-        with self._connect() as connection:
+        with self._connection() as connection:
             rows = connection.execute(
                 "SELECT order_id, status, attempts, created_at, claimed_at, completed_at "
                 "FROM orders ORDER BY created_at DESC LIMIT ?",
@@ -216,7 +227,7 @@ class OrderQueue:
         """Resolve an order only after the physical kiosk state was checked."""
         if resolution not in {"succeeded", "failed", "requeue"}:
             raise ValueError("resolution must be succeeded, failed, or requeue")
-        with self._connect() as connection:
+        with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT status FROM orders WHERE order_id = ?", (order_id,)

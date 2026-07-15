@@ -10,6 +10,8 @@ permissions:
 
 jobs:
   safe-core:
+    env:
+      PYTHONUTF8: "1"
     strategy:
       fail-fast: false
       matrix:

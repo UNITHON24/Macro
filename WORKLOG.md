@@ -13,7 +13,8 @@
 - Reliability: replaced the volatile handoff with a SQLite queue, idempotency keys, global
   single-claim transactions, result ACKs, and distinct `awaiting_handoff` and `uncertain` states.
   Any verified live cart mutation now blocks the next order until an operator confirms customer
-  handoff or cancellation and restores the kiosk.
+  handoff or cancellation and restores the kiosk. The queue now also closes every SQLite
+  connection explicitly so transaction completion releases its database handle on Windows.
 - Security: required an installation-specific token for every durable order-hub request, used
   constant-time comparison, authenticated every local API endpoint, filtered offscreen and disabled
   UIA controls, and kept dry-run, payment navigation, OCR downloads, and coordinate fallback as
@@ -24,7 +25,9 @@
 - Validation: syntax compilation and all 69 standard-library tests passed locally. The suite covers
   the backend payload contract, actual nested controls in the team demo fixture, grounding,
   postconditions, cart evidence, window binding, order-hub authentication, idempotency, handoff
-  blocking, recovery, and result acknowledgements.
+  blocking, recovery, and result acknowledgements. The first cross-platform CI run exposed Windows
+  file-handle, console-encoding, and path-separator assumptions; their causes and fixes are recorded
+  in the troubleshooting log and are covered by the Linux/Windows quality matrix.
 - Delivery: implementation and documentation are prepared for pull-request review and CI.
 
 ## 2026-07-15 — Public repository renovation and safe order execution

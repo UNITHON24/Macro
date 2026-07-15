@@ -21,9 +21,18 @@ class ConfigTest(unittest.TestCase):
         self.assertFalse(config.allow_coordinate_fallback)
         self.assertEqual(config.max_order_items, 10)
         self.assertEqual(config.max_item_quantity, 10)
-        self.assertTrue(config.ui_coords_path.endswith("macro_pkg/settingPack/kiosk_ui_coords_easyocr.json"))
-        self.assertTrue(config.menu_cards_path.endswith("macro_pkg/settingPack/menu_cards.json"))
-        self.assertTrue(config.profile_path.endswith("macro_pkg/settingPack/kiosk_profile.json"))
+        self.assertEqual(
+            Path(config.ui_coords_path).parts[-3:],
+            ("macro_pkg", "settingPack", "kiosk_ui_coords_easyocr.json"),
+        )
+        self.assertEqual(
+            Path(config.menu_cards_path).parts[-3:],
+            ("macro_pkg", "settingPack", "menu_cards.json"),
+        )
+        self.assertEqual(
+            Path(config.profile_path).parts[-3:],
+            ("macro_pkg", "settingPack", "kiosk_profile.json"),
+        )
 
     def test_environment_is_evaluated_for_each_instance(self):
         with patch.dict(
