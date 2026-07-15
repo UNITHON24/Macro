@@ -27,7 +27,9 @@ class LauncherPathTest(unittest.TestCase):
     def test_full_launcher_skips_calibration_by_default(self):
         launcher = load_module("macro_launcher_safe_default", ROOT / "macro_pkg" / "launcher.py")
 
-        with patch.dict(os.environ, {}, clear=True), patch.object(launcher, "run_sync") as run_sync:
+        with patch.dict(
+            os.environ, {"KIOSK_ORDER_TOKEN": "a" * 32}, clear=True
+        ), patch.object(launcher, "run_sync") as run_sync:
             prepared = launcher.prepare_client_files()
 
         self.assertTrue(prepared)
@@ -59,11 +61,21 @@ class LauncherPathTest(unittest.TestCase):
             ROOT / "macro_pkg" / "launcherNonback.py",
         )
 
-        with patch.dict(os.environ, {}, clear=True), patch.object(launcher, "run_sync") as run_sync:
+        with patch.dict(
+            os.environ, {"KIOSK_ORDER_TOKEN": "a" * 32}, clear=True
+        ), patch.object(launcher, "run_sync") as run_sync:
             prepared = launcher.prepare_client_files()
 
         self.assertTrue(prepared)
         run_sync.assert_not_called()
+
+    def test_launcher_rejects_a_missing_order_hub_token(self):
+        launcher = load_module(
+            "macro_launcher_missing_token", ROOT / "macro_pkg" / "launcherNonback.py"
+        )
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(launcher.prepare_client_files())
 
 
 if __name__ == "__main__":

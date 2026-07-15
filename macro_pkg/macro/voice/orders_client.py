@@ -1,96 +1,151 @@
 from __future__ import annotations
-import time
+
 import threading
-from typing import Optional, Callable
-import requests
+import time
+from typing import Any, Callable, Dict, Optional, Tuple
+from urllib.parse import quote
+
 from .config import Config
 from .macro import OrderMacro
 
+
 class OrdersClient:
-    """
-    Polls ORDERS_URL for JSON like:
-      - [{ "name": "...", "count": 1 }, ...]
-      - or { "type": "final", "items": [ ... ] }
-    Uses the order hub's consume-once GET contract and triggers macro.perform(items).
-    """
-    def __init__(self, cfg: Config, macro: OrderMacro, on_server_stop: Optional[Callable[[], None]] = None):
+    """Claim durable orders, execute once, and acknowledge the observed result."""
+
+    def __init__(
+        self,
+        cfg: Config,
+        macro: OrderMacro,
+        on_server_stop: Optional[Callable[[], None]] = None,
+        http: Any = None,
+    ):
         self.cfg = cfg
         self.macro = macro
         self.on_server_stop = on_server_stop
+        self._http_client = http
         self.thread: Optional[threading.Thread] = None
         self.running = False
-        
-        # 오버레이 참조 (나중에 설정)
         self.overlay = None
 
-    def set_overlay(self, overlay):
-        """오버레이 참조 설정"""
+    def _http(self) -> Any:
+        if self._http_client is None:
+            import requests  # type: ignore
+
+            self._http_client = requests
+        return self._http_client
+
+    def _headers(self) -> Dict[str, str]:
+        token = str(getattr(self.cfg, "orders_token", "") or "").strip()
+        return {"X-Macro-Token": token} if token else {}
+
+    def set_overlay(self, overlay: Any) -> None:
         self.overlay = overlay
 
-    def _extract_items(self, payload) -> Optional[list]:
+    @staticmethod
+    def _extract_delivery(payload: Any) -> Tuple[Optional[str], Optional[list]]:
         if isinstance(payload, list):
-            return payload
+            return None, payload
         if isinstance(payload, dict):
+            order_id = str(payload.get("order_id", "") or "").strip() or None
+            if isinstance(payload.get("items"), list):
+                return order_id, payload["items"]
             if payload.get("type") == "final" and isinstance(payload.get("items"), list):
-                return payload["items"]
-            # fallback: if dict looks like order
-            if "name" in payload or "menu" in payload:
-                return [payload]
-        return None
+                return order_id, payload["items"]
+            if any(key in payload for key in ("name", "menu", "menuName", "displayName")):
+                return order_id, [payload]
+        return None, None
 
-    def _tick(self):
+    def _extract_items(self, payload: Any) -> Optional[list]:
+        return self._extract_delivery(payload)[1]
+
+    def _report_result(self, order_id: str, result: Dict[str, Any]) -> bool:
+        url = f"{self.cfg.orders_url.rstrip('/')}/{quote(order_id, safe='')}/result"
+        retries = max(1, int(getattr(self.cfg, "order_result_retries", 3)))
+        for attempt in range(retries):
+            try:
+                response = self._http().post(
+                    url, json=result, headers=self._headers(), timeout=2
+                )
+                response.raise_for_status()
+                return True
+            except Exception as exc:
+                print(f"[NET] 주문 결과 보고 실패 ({attempt + 1}/{retries}): {exc}")
+                if attempt + 1 < retries:
+                    time.sleep(min(1.0, 0.2 * (2**attempt)))
+        return False
+
+    def _set_processing(self, processing: bool) -> None:
+        if self.overlay:
+            self.overlay.set_processing_order(processing)
+
+    def _poll_mic_pulse(self) -> None:
+        if not self.overlay:
+            return
+        url = self.cfg.orders_url.replace("/api/orders", "/api/mic-pulse")
+        try:
+            response = self._http().get(url, headers=self._headers(), timeout=1)
+            if response.status_code == 200:
+                payload = response.json()
+                if "mic_pulse_enabled" in payload:
+                    self.overlay.enable_mic_pulse(payload["mic_pulse_enabled"])
+        except Exception:
+            pass
+
+    def _tick(self) -> None:
         while self.running:
             try:
-                # 주문 확인
-                r = requests.get(self.cfg.orders_url, timeout=2)
-                if r.status_code == 204:
+                response = self._http().get(
+                    self.cfg.orders_url, headers=self._headers(), timeout=2
+                )
+                if response.status_code == 204:
+                    self._poll_mic_pulse()
                     time.sleep(self.cfg.orders_poll_interval_sec)
                     continue
-                r.raise_for_status()
-                payload = r.json()
-                items = self._extract_items(payload)
+                response.raise_for_status()
+                payload = response.json()
+                order_id, items = self._extract_delivery(payload)
                 if items:
-                    print("[ORDERS] new items:", items)
-                    # 주문 처리 시작 - 마이크 종료 방지
-                    if self.overlay:
-                        self.overlay.set_processing_order(True)
+                    self._set_processing(True)
                     try:
-                        # 매크로 실행
-                        self.macro.perform(items)
-                        print("[ORDERS] 주문 처리 완료")
-                    except Exception as e:
-                        print(f"[ERR] 주문 처리 실패: {e}")
+                        result = self.macro.perform(items)
+                    except Exception as exc:
+                        result = {
+                            "success": False,
+                            "error": str(exc),
+                            "requires_manual_review": True,
+                        }
                     finally:
-                        # 주문 처리 완료 - 마이크 종료 가능
-                        if self.overlay:
-                            self.overlay.set_processing_order(False)
-                else:
-                    # optional: stop signal
-                    if isinstance(payload, dict) and payload.get("type") == "stop" and self.on_server_stop:
-                        print("[ORDERS] 서버에서 중지 신호 수신")
-                        self.on_server_stop()
-                
-                # 마이크 펄스 상태 확인 (별도 요청)
-                try:
-                    pulse_r = requests.get(f"{self.cfg.orders_url.replace('/api/orders', '/api/mic-pulse')}", timeout=1)
-                    if pulse_r.status_code == 200:
-                        pulse_payload = pulse_r.json()
-                        if "mic_pulse_enabled" in pulse_payload and self.overlay:
-                            self.overlay.enable_mic_pulse(pulse_payload["mic_pulse_enabled"])
-                except Exception as e:
-                    # 마이크 펄스 상태 확인 실패는 무시 (주문 처리에 영향 없음)
-                    pass
-                        
-            except requests.exceptions.RequestException as e:
-                # network error
-                print(f"[NET] 네트워크 오류: {e}")
-            except Exception as e:
-                # parsing error or other
-                print(f"[ERR] 주문 처리 오류: {e}")
-                
+                        self._set_processing(False)
+                    if order_id and not self._report_result(order_id, result):
+                        print(
+                            "[STOP] 결과 ACK를 확인할 수 없어 중복 실행 방지를 위해 "
+                            "주문 수신을 중단합니다."
+                        )
+                        self.running = False
+                    elif result.get("requires_manual_review"):
+                        print(
+                            "[STOP] 키오스크 반영 여부가 불확실해 운영자 확인 전까지 "
+                            "주문 수신을 중단합니다."
+                        )
+                        self.running = False
+                    elif result.get("awaiting_handoff"):
+                        print(
+                            "[STOP] 고객 인계와 키오스크 초기화를 확인하기 전까지 "
+                            "주문 수신을 중단합니다."
+                        )
+                        self.running = False
+                elif (
+                    isinstance(payload, dict)
+                    and payload.get("type") == "stop"
+                    and self.on_server_stop
+                ):
+                    self.on_server_stop()
+                self._poll_mic_pulse()
+            except Exception as exc:
+                print(f"[NET] 주문 수신 오류: {exc}")
             time.sleep(self.cfg.orders_poll_interval_sec)
 
-    def start(self):
+    def start(self) -> None:
         if self.thread and self.thread.is_alive():
             return
         self.running = True
@@ -98,6 +153,6 @@ class OrdersClient:
         self.thread.start()
         print("[ORDERS] 주문 수신 시작")
 
-    def stop(self):
+    def stop(self) -> None:
         self.running = False
         print("[ORDERS] 주문 수신 중지")

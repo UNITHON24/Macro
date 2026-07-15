@@ -1,0 +1,73 @@
+{
+  "schema_version": 2,
+  "name": "UNITHON demo kiosk semantic profile",
+  "reference_viewport": {
+    "width": 1080,
+    "height": 1920
+  },
+  "aliases": {
+    "next": ["다음", "다음 페이지", "Next"],
+    "previous": ["이전", "이전 페이지", "Previous"],
+    "checkout": ["결제하기", "주문하기", "결제", "Checkout"],
+    "card": ["카드", "신용카드", "체크카드", "Card"]
+  },
+  "modifiers": {
+    "temperature": {
+      "ICE": {
+        "aliases": ["ICE", "ICED", "아이스", "차갑게"],
+        "menu_tokens": ["아이스", "ICE", "ICED"],
+        "option_labels": ["아이스", "ICE", "차갑게"]
+      },
+      "HOT": {
+        "aliases": ["HOT", "따뜻한", "뜨겁게"],
+        "menu_tokens": ["따뜻한", "HOT"],
+        "option_labels": ["따뜻하게", "HOT", "뜨겁게"]
+      }
+    },
+    "size": {
+      "REGULAR": {
+        "aliases": ["REGULAR", "기본", "레귤러"],
+        "menu_tokens": ["레귤러", "REGULAR"],
+        "option_labels": ["레귤러", "기본", "REGULAR"]
+      },
+      "LARGE": {
+        "aliases": ["LARGE", "라지", "큰 사이즈"],
+        "menu_tokens": ["라지", "LARGE"],
+        "option_labels": ["라지", "LARGE", "큰 사이즈"]
+      }
+    }
+  },
+  "confirm_labels": ["담기", "장바구니 담기", "추가", "선택 완료", "확인"],
+  "item_added_markers": ["{menu} 장바구니에 담았습니다", "{menu} 추가 완료"],
+  "menu_region": [0.0, 0.08, 0.68, 0.84],
+  "cart_region": [0.68, 0.0, 1.0, 1.0],
+  "cart_added_markers": ["장바구니", "총 금액", "총 결제금액", "결제하기", "주문하기"],
+  "states": {
+    "menu": ["커피", "음료", "디저트"],
+    "cart": ["장바구니", "총 금액", "결제하기"],
+    "payment_ready": ["결제 방법 선택", "결제 수단을 선택해 주세요", "카드 결제", "현금 결제"]
+  },
+  "state_priority": ["payment_ready", "cart", "menu"],
+  "transitions": [
+    {
+      "source": "menu",
+      "destination": "payment_ready",
+      "target": {
+        "key": "checkout",
+        "labels": ["결제하기", "주문하기", "결제", "Checkout"],
+        "roles": ["ButtonControl", "button"]
+      },
+      "expected_any": ["결제 방법 선택", "결제 수단을 선택해 주세요", "카드 결제", "현금 결제"]
+    },
+    {
+      "source": "cart",
+      "destination": "payment_ready",
+      "target": {
+        "key": "checkout",
+        "labels": ["결제하기", "주문하기", "결제", "Checkout"],
+        "roles": ["ButtonControl", "button"]
+      },
+      "expected_any": ["결제 방법 선택", "결제 수단을 선택해 주세요", "카드 결제", "현금 결제"]
+    }
+  ]
+}

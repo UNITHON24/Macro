@@ -517,6 +517,11 @@ class MicOverlay:
             response = requests.post(
                 f"{self.cfg.orders_url.replace('/api/orders', '/api/mic-status')}",
                 json=payload,
+                headers=(
+                    {"X-Macro-Token": self.cfg.orders_token}
+                    if getattr(self.cfg, "orders_token", "")
+                    else {}
+                ),
                 timeout=1
             )
             

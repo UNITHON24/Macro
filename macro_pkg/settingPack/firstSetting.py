@@ -17,8 +17,8 @@ import pyautogui
 # Moving the pointer to a screen corner remains an emergency stop during calibration.
 pyautogui.FAILSAFE = True
 
-# 기본 키오스크 URL (환경변수 KIOSK_URL로 오버라이드 가능)
-KIOSK_URL = os.environ.get("KIOSK_URL", "https://frontend-phi-tan.vercel.app/")
+# URL을 지정하면 브라우저를 열고, 비워 두면 이미 실행 중인 외부 키오스크에 연결합니다.
+KIOSK_URL = os.environ.get("KIOSK_URL", "").strip()
 
 def run_command(cmd):
     """명령어 실행"""
@@ -68,18 +68,21 @@ def main() -> int:
 
     print("✅ 모든 파일 확인됨")
 
-    # 1단계: 키오스크 열기
-    print("\n📋 1단계: 키오스크 열기")
-    print("키오스크 브라우저를 여는 중...")
-
-    success = run_command(
-        [sys.executable, "openKiosk.py", "--url", KIOSK_URL, "--kiosk", "--zoom", "0.65"]
-    )
-    if not success:
-        print("❌ 키오스크 실행 실패")
-        return 1
-    print("⏳ 5초 대기...")
-    time.sleep(5)
+    # 1단계: 사용자가 지정한 URL을 열거나 이미 실행 중인 외부 키오스크를 사용합니다.
+    print("\n📋 1단계: 키오스크 연결")
+    if KIOSK_URL:
+        print("지정한 키오스크 URL을 여는 중...")
+        success = run_command(
+            [sys.executable, "openKiosk.py", "--url", KIOSK_URL, "--kiosk", "--zoom", "0.65"]
+        )
+        if not success:
+            print("❌ 키오스크 실행 실패")
+            return 1
+        print("⏳ 5초 대기...")
+        time.sleep(5)
+    else:
+        print("이미 실행 중인 키오스크 창을 전면에 두고 5초 안에 준비하세요.")
+        time.sleep(5)
 
     # 2단계: UI 좌표 분석
     print("\n📋 2단계: UI 좌표 분석")

@@ -82,7 +82,18 @@ def grab_region_abs(x1,y1,x2,y2):
 # ---------- EasyOCR ----------
 def init_reader():
     # ko + en 조합이 안정적
-    return easyocr.Reader(['ko','en'], gpu=False, verbose=False)
+    allow_download = os.environ.get("KIOSK_OCR_ALLOW_DOWNLOAD", "0").strip().casefold() in {
+        "1", "true", "yes", "on"
+    }
+    default_model_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models"))
+    model_dir = os.environ.get("KIOSK_OCR_MODEL_DIR", default_model_dir).strip()
+    return easyocr.Reader(
+        ['ko','en'],
+        gpu=False,
+        verbose=False,
+        download_enabled=allow_download,
+        model_storage_directory=model_dir,
+    )
 
 def easyocr_full_text(reader, img_bgr, scale=3.0, try_invert=True):
     """

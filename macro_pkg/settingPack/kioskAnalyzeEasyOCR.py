@@ -4,10 +4,12 @@ from difflib import SequenceMatcher
 from collections import defaultdict
 import cv2, numpy as np
 import easyocr
+from ocr_geometry import restore_polygon
 
 # ===== 레이아웃/탐색 파라미터 =====
 # 기본 그리드(필요 시 CLI로 덮어쓰기). UI가 최대 2x8까지 가능하므로 기본값 2x8.
 GRID_COLS, GRID_ROWS = 2, 8
+OCR_SCALE = 1.6
 INNER_PAD = 0.02  # 카드 경계 여유
 # 텍스트/가격은 카드 하부 영역의 바(약 20~22%)에 위치
 BAND_YRANGE = (0.78, 0.99)
@@ -55,12 +57,20 @@ def safe_imread(path, flags=cv2.IMREAD_COLOR):
 
 # ---- EasyOCR 초기화 ----
 def init_ocr():
-    return easyocr.Reader(['ko', 'en'], gpu=False)
+    allow_download = os.environ.get("KIOSK_OCR_ALLOW_DOWNLOAD", "0").strip().casefold() in {
+        "1", "true", "yes", "on"
+    }
+    default_model_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "models"))
+    model_dir = os.environ.get("KIOSK_OCR_MODEL_DIR", default_model_dir).strip()
+    options = {"gpu": False, "download_enabled": allow_download}
+    if model_dir:
+        options["model_storage_directory"] = model_dir
+    return easyocr.Reader(['ko', 'en'], **options)
 
 def preprocess_for_ocr(img_bgr):
     """OCR 성능 향상을 위한 간단 전처리: 확대 + CLAHE + 선명화"""
     # 확대
-    scale = 1.6
+    scale = OCR_SCALE
     h, w = img_bgr.shape[:2]
     img = cv2.resize(img_bgr, (int(w*scale), int(h*scale)), interpolation=cv2.INTER_CUBIC)
 
@@ -93,7 +103,7 @@ def ppo_read(ocr, img_bgr, min_conf=NAME_CONF_MIN):
                 continue
 
             # bbox를 폴리곤 형태로 변환
-            poly = bbox
+            poly = restore_polygon(bbox, OCR_SCALE)
 
             out.append((poly, text.strip(), confidence))
 
@@ -377,6 +387,8 @@ def refine_with_ground_truth(rows, gt_path):
 
 def analyze_dir(captures_dir, out_json="menu_cards.json", ground_truth_path=None, grid=None):
     print(f"[WD] {os.getcwd()}"); print(f"[IN ] {os.path.abspath(captures_dir)}")
+    if not os.path.isdir(captures_dir):
+        raise FileNotFoundError(f"캡처 폴더가 없습니다: {captures_dir}")
     ocr=init_ocr(); ensure_dir(DEBUG_DIR)
     all_rows=[]; per_category=defaultdict(int)
 
@@ -444,15 +456,14 @@ def analyze_dir(captures_dir, out_json="menu_cards.json", ground_truth_path=None
         all_rows, stats = refine_with_ground_truth(all_rows, ground_truth_path)
         print(f"[ACC] 이름일치 {stats['name_match']}/{stats['total']}  가격일치 {stats['price_match']}/{stats['total']}  동시일치 {stats['both_match']}/{stats['total']}")
 
-    with open(out_json,"w",encoding="utf-8") as f:
+    if not all_rows:
+        raise RuntimeError("인식된 메뉴가 없어 기존 보정 파일을 보존합니다")
+    temporary_path = f"{out_json}.tmp"
+    with open(temporary_path,"w",encoding="utf-8") as f:
         json.dump(all_rows,f,ensure_ascii=False,indent=2)
+    os.replace(temporary_path, out_json)
     print(f"[OK] 분석 완료 → {out_json} (총 {len(all_rows)}개)")
     return all_rows, stats
-    if per_category:
-        print("-------- 요약 --------")
-        for k in sorted(per_category.keys()):
-            print(f"{k}: {per_category[k]}개")
-        print("----------------------")
 
 def _resolve_json_path(out_arg: str) -> str:
     # 우선순위: CLI 인자 -> 현재 작업 디렉터리의 menu_cards.json -> 스크립트 폴더의 menu_cards.json
@@ -500,16 +511,50 @@ def run_mock_print(menu_json_path: str, wait_seconds: float = 5.7, per_line_dela
         print(f"[{k}] {per_cat[k]}개 저장됨")
     print(f"총 {total}개 저장됨")
 
-if __name__=="__main__":
+def _parse_grid(raw):
+    if not raw:
+        return None
+    match = re.fullmatch(r"\s*(\d+)\s*[xX]\s*(\d+)\s*", raw)
+    if not match:
+        raise ValueError("--grid는 2x8 형식이어야 합니다")
+    cols, rows = int(match.group(1)), int(match.group(2))
+    if cols < 1 or rows < 1:
+        raise ValueError("그리드 크기는 1 이상이어야 합니다")
+    return cols, rows
+
+
+def main(argv=None):
     ap=argparse.ArgumentParser()
     ap.add_argument("--indir", default="captures")
     ap.add_argument("--out", default="menu_cards.json")
-    ap.add_argument("--gt", default="ground_truth_menu.json", help="정답 메뉴표(JSON)")
+    ap.add_argument("--gt", default=None, help="선택 정답 메뉴표(JSON)")
     ap.add_argument("--grid", default=None, help="그리드 설정 예: 2x8, 2x4 등")
-    ap.add_argument("--mock-only", action="store_true", help="고정 출력 모드 강제")
+    ap.add_argument("--mock-only", action="store_true", help="기존 JSON을 읽어 출력만 확인")
     ap.add_argument("--line-delay", type=float, default=0.005, help="한 줄 출력 간격(초). 기본 0.005s")
-    args=ap.parse_args()
+    args=ap.parse_args(argv)
 
-    # 요구사항: 실제 인식 대신 5.7초 대기 후 고정 파일에서 읽어 연속 출력
-    menu_json_path = _resolve_json_path(args.out)
-    run_mock_print(menu_json_path, wait_seconds=5.7, per_line_delay=max(0.0, args.line_delay))
+    try:
+        if args.mock_only:
+            menu_json_path = _resolve_json_path(args.out)
+            if not os.path.isfile(menu_json_path):
+                raise FileNotFoundError(menu_json_path)
+            run_mock_print(
+                menu_json_path,
+                wait_seconds=0,
+                per_line_delay=max(0.0, args.line_delay),
+            )
+            return 0
+        rows, _ = analyze_dir(
+            args.indir,
+            out_json=args.out,
+            ground_truth_path=args.gt,
+            grid=_parse_grid(args.grid),
+        )
+        return 0
+    except Exception as exc:
+        print(f"[ERROR] 메뉴 분석 실패: {exc}")
+        return 1
+
+
+if __name__=="__main__":
+    sys.exit(main())
