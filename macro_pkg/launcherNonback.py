@@ -68,7 +68,14 @@ def prepare_client_files() -> bool:
         print("[SAFE] 좌표 보정 건너뜀 (KIOSK_RUN_CALIBRATION 미설정)")
 
     config = Config()
-    required_paths = [Path(config.ui_coords_path), Path(config.menu_cards_path)]
+    if len(config.orders_token) < 32:
+        print("[ERR] KIOSK_ORDER_TOKEN with at least 32 characters is required")
+        return False
+    required_paths = [
+        Path(config.ui_coords_path),
+        Path(config.menu_cards_path),
+        Path(config.profile_path),
+    ]
     missing_paths = [path for path in required_paths if not path.is_file()]
     if missing_paths:
         for path in missing_paths:
@@ -87,10 +94,16 @@ def main() -> int:
     if not ORDERS.exists():
         print(f"[ERR] not found: {ORDERS}")
         return 1
-    run_bg([sys.executable, str(ORDERS)], cwd=ORDERS.parent)
+    if wait_port("127.0.0.1", 9999, 1):
+        print("[ERR] 9999 포트가 이미 사용 중입니다. 기존 ordersHub를 종료하세요.")
+        return 3
+    orders_process = run_bg([sys.executable, str(ORDERS)], cwd=ORDERS.parent)
     print("[WAIT] http://localhost:9999 준비 대기...")
     if not wait_port("127.0.0.1", 9999, 60):
         print("[ERR] 9999 포트 준비 실패")
+        return 3
+    if orders_process.poll() is not None:
+        print("[ERR] 새 ordersHub 프로세스가 시작 직후 종료됐습니다.")
         return 3
     print("[OK ] 9999 준비 완료")
 

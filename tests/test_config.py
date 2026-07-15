@@ -17,11 +17,22 @@ class ConfigTest(unittest.TestCase):
             config = Config()
 
         self.assertTrue(config.dry_run)
-        self.assertFalse(config.allow_checkout)
+        self.assertFalse(config.allow_payment_navigation)
+        self.assertFalse(config.allow_coordinate_fallback)
         self.assertEqual(config.max_order_items, 10)
         self.assertEqual(config.max_item_quantity, 10)
-        self.assertTrue(config.ui_coords_path.endswith("macro_pkg/settingPack/kiosk_ui_coords_easyocr.json"))
-        self.assertTrue(config.menu_cards_path.endswith("settingPack/menu_cards.json"))
+        self.assertEqual(
+            Path(config.ui_coords_path).parts[-3:],
+            ("macro_pkg", "settingPack", "kiosk_ui_coords_easyocr.json"),
+        )
+        self.assertEqual(
+            Path(config.menu_cards_path).parts[-3:],
+            ("macro_pkg", "settingPack", "menu_cards.json"),
+        )
+        self.assertEqual(
+            Path(config.profile_path).parts[-3:],
+            ("macro_pkg", "settingPack", "kiosk_profile.json"),
+        )
 
     def test_environment_is_evaluated_for_each_instance(self):
         with patch.dict(
@@ -35,9 +46,9 @@ class ConfigTest(unittest.TestCase):
             safe_config = Config()
 
         self.assertFalse(live_config.dry_run)
-        self.assertTrue(live_config.allow_checkout)
+        self.assertTrue(live_config.allow_payment_navigation)
         self.assertTrue(safe_config.dry_run)
-        self.assertFalse(safe_config.allow_checkout)
+        self.assertFalse(safe_config.allow_payment_navigation)
 
     def test_invalid_or_empty_boolean_values_preserve_safe_defaults(self):
         with patch.dict(
