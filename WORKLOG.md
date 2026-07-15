@@ -21,5 +21,8 @@
 - Validation: added standard-library tests for launcher paths, calibration opt-in and failure
   propagation, configuration evaluation, menu indexing, malformed and unmatched orders, partial
   failure, full-payload rejection, order limits, overlapping execution, emergency stop, simulated
-  checkout, manual live checkout, and full success. Delivery and CI results are recorded after the
-  branch is published.
+  checkout, manual live checkout, and full success. All 22 tests and syntax compilation passed
+  locally and in GitHub Actions.
+- Delivery: merged pull request #1 into `main`; pull-request and post-merge `quality` runs passed.
+  The public README, architecture note, and work log returned HTTP 200, and repository description,
+  homepage, and topics now identify the project as an accessibility hackathon prototype.
