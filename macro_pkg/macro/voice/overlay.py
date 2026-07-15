@@ -96,8 +96,8 @@ class MicOverlay:
 
         self.frame_q: "queue.Queue[bytes]" = queue.Queue(maxsize=50)
         self.audio = AudioStreamer(self.cfg, self.frame_q)
-        # 매크로/오버레이 참조를 WebSocket 클라이언트에도 넘겨 macro.trigger 즉시 실행
-        self.ws = AudioWSClient(self.cfg, self.frame_q, on_server_stop=self.stop_from_server, macro=self.macro, overlay=self)
+        # 주문 실행은 OrdersClient 한 경로로 제한한다. WebSocket은 음성/TTS만 처리한다.
+        self.ws = AudioWSClient(self.cfg, self.frame_q, on_server_stop=self.stop_from_server)
         self.orders = OrdersClient(self.cfg, self.macro, on_server_stop=self.stop_from_server)
         
         # 주문 처리 중 마이크 종료 방지

@@ -6,12 +6,12 @@ import threading
 import queue
 import time
 import websockets
-from typing import Optional, Callable, Any
+from typing import Optional, Callable
 from .config import Config
 from .tts_player import TTSPlayer
 
 class AudioWSClient:
-    def __init__(self, cfg: Config, frame_q: "queue.Queue[bytes]", on_server_stop: Optional[Callable[[], None]] = None, macro: Optional[Any] = None, overlay: Optional[Any] = None):
+    def __init__(self, cfg: Config, frame_q: "queue.Queue[bytes]", on_server_stop: Optional[Callable[[], None]] = None):
         self.cfg = cfg
         self.frame_q = frame_q
         self.on_server_stop = on_server_stop
@@ -24,9 +24,6 @@ class AudioWSClient:
         self.connected = False
         self.tts_player = TTSPlayer(prefer_pygame_fallback=cfg.tts_prefer_pygame_fallback)
         self._fallback_timer = None
-        # 매크로/오버레이 참조 (macro.trigger 즉시 실행용)
-        self.macro = macro
-        self.overlay = overlay
 
     async def _connect(self):
         try:
@@ -136,37 +133,10 @@ class AudioWSClient:
                     transcript = data.get("transcript", "")
                     print(f"[STT] 최종 인식: {transcript}")
                 elif t == "macro.trigger":
-                    # 백엔드가 주문 완료를 WebSocket 이벤트로 직접 전달한 경우
-                    try:
-                        order_data = data.get("orderData") or {}
-                        raw_items = order_data.get("items") or []
-                        # 매크로가 이해할 수 있는 포맷으로 정규화
-                        items = []
-                        for it in raw_items:
-                            items.append({
-                                "displayName": it.get("displayName") or it.get("menuName") or it.get("name"),
-                                "quantity": it.get("quantity") or it.get("count") or it.get("qty") or 1,
-                                "menuName": it.get("menuName")
-                            })
-
-                        def _run_macro():
-                            try:
-                                if self.overlay:
-                                    self.overlay.set_processing_order(True)
-                                if self.macro:
-                                    print(f"[ORDERS][WS] macro.trigger 수신 → 실행: {items}")
-                                    self.macro.perform(items)
-                                    print("[ORDERS][WS] 매크로 실행 완료")
-                            except Exception as e:
-                                print(f"[ERR][WS] macro.trigger 처리 실패: {e}")
-                            finally:
-                                if self.overlay:
-                                    self.overlay.set_processing_order(False)
-
-                        # WebSocket 수신 루프를 막지 않도록 별도 스레드에서 실행
-                        threading.Thread(target=_run_macro, daemon=True).start()
-                    except Exception as e:
-                        print(f"[WS] macro.trigger 처리 오류: {e}")
+                    print(
+                        "[ORDERS][WS] macro.trigger는 실행하지 않습니다. "
+                        "주문 허브 polling이 유일한 매크로 실행 경로입니다."
+                    )
                 else:
                     print(f"[WS] 알 수 없는 메시지 타입: {t}")
                     print(f"[WS] 전체 데이터: {data}")

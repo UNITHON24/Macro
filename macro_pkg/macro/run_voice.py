@@ -32,7 +32,7 @@ def main():
         # 필요한 모듈 확인
         required_modules = [
             'tkinter', 'pyautogui', 'sounddevice', 'webrtcvad', 
-            'websockets', 'requests', 'numpy'
+            'websockets', 'requests', 'numpy', 'pygame', 'pydub'
         ]
         
         missing_modules = []
@@ -65,6 +65,11 @@ def main():
         print(f"✅ 메뉴 카드: {cfg.menu_cards_path}")
         print(f"✅ WebSocket: {cfg.audio_ws_url}")
         print(f"✅ 주문 API: {cfg.orders_url}")
+        print(f"✅ 포인터 동작: {'DRY RUN' if cfg.dry_run else 'LIVE CLICKS ENABLED'}")
+        print(
+            f"✅ 결제 동작 시뮬레이션: "
+            f"{'ENABLED' if cfg.allow_checkout and cfg.dry_run else 'BLOCKED'}"
+        )
         
         print("\n🚀 마이크 오버레이 시작...")
         print("💡 마이크 버튼을 클릭하여 녹음을 시작하세요")

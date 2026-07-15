@@ -22,7 +22,7 @@ class Config:
     silence_timeout_sec: int = int(os.environ.get("KIOSK_SILENCE_TIMEOUT_SEC", "60"))
 
     # Macro behavior
-    dry_run: bool = os.environ.get("KIOSK_DRY_RUN", "0") == "1"
+    dry_run: bool = os.environ.get("KIOSK_DRY_RUN", "1") == "1"
     page_click_delay: float = float(os.environ.get("KIOSK_PAGE_DELAY", "1.00"))
     cat_click_delay: float = float(os.environ.get("KIOSK_CAT_DELAY", "1.00"))
     item_click_delay: float = float(os.environ.get("KIOSK_ITEM_DELAY", "1.00"))

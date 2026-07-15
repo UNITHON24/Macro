@@ -27,7 +27,7 @@ POLL_INTERVAL = 0.05           # 화면 변경 폴링 간격(초)
 MAX_PREV_TO_FIRST = 5
 MAX_PAGES_PER_CAT = 60
 
-pag.FAILSAFE = False
+pag.FAILSAFE = True
 pag.PAUSE = 0.02
 
 # ---------- 유틸 ----------

@@ -162,5 +162,7 @@ debug_*/ venv/
 __pycache__/
 *.pyc
 *.zip
+.idea/
+*.iml
 settingPack/captures/
 settingPack/debug_kiosk/
