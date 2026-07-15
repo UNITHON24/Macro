@@ -28,7 +28,9 @@
   blocking, recovery, and result acknowledgements. The first cross-platform CI run exposed Windows
   file-handle, console-encoding, and path-separator assumptions; their causes and fixes are recorded
   in the troubleshooting log and are covered by the Linux/Windows quality matrix.
-- Delivery: implementation and documentation are prepared for pull-request review and CI.
+- Delivery: merged pull request #3 into `main` after its Ubuntu and Windows quality jobs passed;
+  the post-merge quality run passed on both operating systems as well. Backend pull request #2
+  delivered the matching authenticated `X-Macro-Token` contract.
 
 ## 2026-07-15 — Public repository renovation and safe order execution
 
