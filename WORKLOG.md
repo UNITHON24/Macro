@@ -12,8 +12,12 @@
 - Validation: `python3 -m compileall -q macro_pkg tests`, all 76 standard-library tests, and the
   offline acceptance CLI completed locally. The generated offline report was `profile_ready` with
   two matching order cases and `live_observation.status=not_run`.
-- Delivery: prepared on a dedicated feature branch for pull-request review; no pointer action,
-  real kiosk operation, or physical-device acceptance was performed.
+- Delivery: [pull request #5](https://github.com/UNITHON24/Macro/pull/5) was merged into
+  `main` as `bf3c2aaf9c0b851c2fad28d932f3100e99497a6b`. Its required Ubuntu and Windows
+  jobs passed, and the [post-merge quality run](https://github.com/UNITHON24/Macro/actions/runs/29646217944)
+  passed the same two jobs. This repository has no hosted service or published package, so there
+  was no separate runtime deployment. No pointer action, real kiosk operation, or physical-device
+  acceptance was performed.
 - Remaining work: run `acceptance_kiosk.py --observe` on the intended isolated Windows kiosk and
   retain that machine-specific report before enabling live input. Real microphone/OCR/UIA E2E and
   a short hardware demonstration remain unverified here.
