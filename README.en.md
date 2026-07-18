@@ -89,6 +89,21 @@ The diagnostic command is read-only. It reports the UIA/OCR elements and detecte
 py macro_pkg\macro\diagnose_kiosk.py --resolve-order '{"menuName":"americano","displayName":"아메리카노","temperature":"ICE","quantity":2}'
 ```
 
+The checked-in UNITHON profile and representative order semantics can be
+verified without hardware. `profile_ready` is deliberately distinct from a
+physical-kiosk acceptance pass.
+
+```powershell
+py macro_pkg\macro\acceptance_kiosk.py --output profile-acceptance.json
+```
+
+On an isolated Windows test kiosk, add `--observe` to check the UIA/OCR
+provider, viewport, recognized state, and default microphone's 16 kHz mono
+capability without opening an audio stream, recording, clicking, moving the
+pointer, or performing payment actions. The reviewed contract is
+`acceptance/unithon-demo.v1.json`; a physical pass can only be produced on that
+hardware.
+
 Start against an already-running speech backend in dry-run mode:
 
 ```powershell

@@ -1,5 +1,23 @@
 # Work log
 
+## 2026-07-18 — Profile-specific read-only acceptance gate
+
+- Objective: turn the UNITHON kiosk profile into a reproducible acceptance contract without
+  pretending that a macOS run is physical Windows kiosk evidence.
+- Changes: added a versioned acceptance spec for required profile states, aliases, viewport,
+  observation providers, default microphone capability, and representative order semantics; added a read-only CLI that reports
+  `profile_ready`, `passed`, or `failed` and keeps physical observation explicitly `not_run` unless
+  `--observe` is requested; added fail-closed tests for profile drift, mismatched providers and
+  viewports, and unknown states.
+- Validation: `python3 -m compileall -q macro_pkg tests`, all 76 standard-library tests, and the
+  offline acceptance CLI completed locally. The generated offline report was `profile_ready` with
+  two matching order cases and `live_observation.status=not_run`.
+- Delivery: prepared on a dedicated feature branch for pull-request review; no pointer action,
+  real kiosk operation, or physical-device acceptance was performed.
+- Remaining work: run `acceptance_kiosk.py --observe` on the intended isolated Windows kiosk and
+  retain that machine-specific report before enabling live input. Real microphone/OCR/UIA E2E and
+  a short hardware demonstration remain unverified here.
+
 ## 2026-07-15 — Black-box semantic automation completion
 
 - Objective: replace the demonstration-time absolute-coordinate path with a reusable, fail-closed
