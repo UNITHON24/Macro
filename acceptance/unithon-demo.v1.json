@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "unithon-demo-kiosk-v1",
+  "profile": {
+    "name": "UNITHON demo kiosk semantic profile",
+    "schema_version": 2,
+    "required_states": ["menu", "cart", "payment_ready"],
+    "required_aliases": ["next", "previous", "checkout", "card"]
+  },
+  "order_cases": [
+    {
+      "id": "iced-americano-two",
+      "input": {
+        "menuName": "americano",
+        "displayName": "아메리카노",
+        "temperature": "ICE",
+        "quantity": 2
+      },
+      "expected": {
+        "menu": "아이스 아메리카노",
+        "quantity": 2,
+        "options": []
+      }
+    },
+    {
+      "id": "large-cafe-latte",
+      "input": {
+        "menuName": "카페 라떼",
+        "size": "LARGE",
+        "quantity": 1
+      },
+      "expected": {
+        "menu": "카페 라떼",
+        "quantity": 1,
+        "options": ["size:LARGE"]
+      }
+    }
+  ],
+  "live_observation": {
+    "accepted_viewports": [
+      { "width": 1080, "height": 1920 }
+    ],
+    "dimension_tolerance": 0.05,
+    "provider_any": ["uia", "ocr"],
+    "accepted_states": ["menu", "cart", "payment_ready"],
+    "minimum_elements": 1,
+    "microphone": {
+      "required": true,
+      "channels": 1,
+      "sample_rate": 16000
+    }
+  }
+}

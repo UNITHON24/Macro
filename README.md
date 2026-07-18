@@ -89,6 +89,25 @@ py macro_pkg\macro\diagnose_kiosk.py
 py macro_pkg\macro\diagnose_kiosk.py --resolve-order '{"menuName":"americano","displayName":"아메리카노","temperature":"ICE","quantity":2}'
 ```
 
+저장된 UNITHON 프로필 계약과 대표 주문 해석은 플랫폼 독립적으로 먼저 검사할 수
+있습니다. 이 상태는 `profile_ready`이며 실제 키오스크 합격을 뜻하지 않습니다.
+
+```powershell
+py macro_pkg\macro\acceptance_kiosk.py --output profile-acceptance.json
+```
+
+격리된 Windows 테스트 키오스크에서는 같은 명세로 UIA/OCR provider, 화면 크기,
+인식 상태, 기본 마이크의 16 kHz mono 입력 지원 여부를 읽기 전용으로 확인합니다.
+마이크 stream을 열거나 녹음하지 않으며 클릭·포인터 이동·결제도 수행하지 않습니다.
+
+```powershell
+$env:KIOSK_WINDOW_TITLE = "대상 키오스크 창 제목"
+py macro_pkg\macro\acceptance_kiosk.py --observe --output physical-acceptance.json
+```
+
+명세는 `acceptance/unithon-demo.v1.json`에 있으며, 실제 장비 합격 보고서는 해당
+장비에서 명령을 실행한 뒤에만 만들 수 있습니다.
+
 백엔드가 이미 실행 중이라면 안전한 dry-run으로 클라이언트를 시작합니다.
 
 ```powershell
@@ -142,7 +161,7 @@ python -m compileall -q macro_pkg tests
 python -m unittest discover -s tests -v
 ```
 
-CI는 Linux와 Windows에서 외부 서버·마이크·포인터 없이 같은 안전 코어를 검증합니다. 현재 테스트는 의미 grounding, 실제 데모의 중첩 action control, 후보 모호성 거부, 정확한 window handle, 숨김·비활성 UIA 제외, 해상도 좌표 스케일링, 상태 그래프, 온도·사이즈 해석, 안정화 확인, 결제 준비 화면 정지, 전체 주문 선검증, 실행 잠금, 긴급 중단, live 허브 인증, SQLite FIFO·멱등성·인계 대기·불확실 상태 복구, 결과 ACK를 다룹니다.
+CI는 Linux와 Windows에서 외부 서버·마이크·포인터 없이 같은 안전 코어를 검증합니다. 현재 테스트는 의미 grounding, 실제 데모의 중첩 action control, 후보 모호성 거부, 정확한 window handle, 숨김·비활성 UIA 제외, 해상도 좌표 스케일링, 상태 그래프, 온도·사이즈 해석, profile acceptance 계약, 안정화 확인, 결제 준비 화면 정지, 전체 주문 선검증, 실행 잠금, 긴급 중단, live 허브 인증, SQLite FIFO·멱등성·인계 대기·불확실 상태 복구, 결과 ACK를 다룹니다.
 
 ## 프로젝트 이력과 기여 범위
 
